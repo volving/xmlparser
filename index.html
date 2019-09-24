@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>HTML Parsing XML document</title>
+</head>
+<body>
+
+    <form action="postXML">
+        <input type="file" name="xmlfileinput" id="xmlfileinput">
+        <button id="formSubmit">Submit</button>
+    </form>
+    <script>
+        const submitBtn = document.querySelector('#formSubmit');
+        const fileInput = document.querySelector('#xmlfileinput');
+        const errorMessage = '不是正式的xml或者根本就不支持这种格式 ;-)';
+        function handleError() {
+            alert(errorMessage);
+        }
+        let oDOM;
+        let fileMap = {};
+
+        if(submitBtn !== null && fileInput !== null) {
+            submitBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                let files = fileInput.files;
+                let xmlfile = files[0];
+                // read file contents
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    let result = e.target && e.target.result
+                    // parsing file contents
+                    let parser = new DOMParser();
+                    try{
+                        oDOM = parser.parseFromString(result, "application/xml");
+                        getFilesInfo(oDOM);
+                    }catch(e) {
+                        handleError();
+                    }
+                };
+                reader.readAsText(xmlfile);
+                return null;
+            }
+        }
+
+        function getFilesInfo(xmldoc){
+            const keys = ['xmeml', 'fcpxml'];
+            let doctype = xmldoc.doctype.name;
+            switch (keys.indexOf(doctype)) {
+                case 0:
+                    console.log(keys[0]);
+                    fileMap = parseXMEML(xmldoc);
+                    break;
+                case 1:
+                    console.log(keys[1]);
+                    fileMap = parseFCP(xmldoc);
+                    break;
+                default:
+                    handleError();
+            }
+            return fileMap;
+        }
+        // name, path, duration, width, height;
+        const keyMap = {
+            name: 'name',
+            pathurl: 'path',
+            src: 'path',
+            duration: 'duration',
+            width: 'width',
+            height: 'height'
+        };
+        function handleXML(doc, fn, itemList, targetTag) {
+            let fnodes = getTags(doc, targetTag); //doc.getElementsByTagName('file');
+            let len = fnodes && fnodes.length;
+            let fileMap = {};
+            for(let i = 0; i < len; i++) {
+                let n = fnodes[i];
+                let fileObj = {};
+                let name = fn(n, 'name');
+                fileObj.name = name;
+                itemList.forEach(item => {
+                    fileObj[keyMap[item]] = fn(n, item) || '';
+                })
+                if(Object.values(fileObj).length > 0 && fileObj.path){
+                    fileMap[name] = fileObj;
+                }
+            }
+            return fileMap;
+        }
+        function parseXMEML(doc) {
+            return handleXML(doc, getTagValue, ['pathurl', 'duration', 'width', 'height'], 'file');
+        }
+        function parseFCP(doc) {
+            return handleXML(doc, getAttrValue, ['src', 'duration'], 'asset');
+        }
+        /********************************--deprecated functions
+        * 1. handleXMEML
+        * 2. handleFCP
+        ************************************/
+        // console.log('XMEML');
+        function handleXMEML (doc){
+            console.log('FCP');
+            let fnodes = getTags(doc, 'file'); //doc.getElementsByTagName('file');
+            let tagList = ['pathurl', 'duration', 'width', 'height'];
+            let len = fnodes && fnodes.length;
+            let fileMap = {};
+            for(let i = 0; i < len; i++) {
+                let n = fnodes[i];
+                let fileObj = {};
+                let name = getTagValue(n, 'name');
+                fileObj.name = name;
+                tagList.forEach(tagName => {
+                    fileObj[keyMap[tagName]] = getTagValue(n, tagName) || '';
+                })
+                if(Object.keys(fileObj))
+                fileMap[name] = fileObj;
+            }
+            return fileMap;
+        }
+        function handleFCP (doc){
+            // Parse <asset> tags only!!
+            let fnodes = getTags(doc, 'asset');
+            let attList = ['src', 'duration'];
+            let len = fnodes && fnodes.length;
+            let fileMap = {};
+            for(let i = 0; i < len; i++) {
+                let n = fnodes[i];
+                let fileObj = {};
+                let name = getAttrValue(n, 'name');
+                fileObj.name = name;
+                attList.forEach(attrName => {
+                    fileObj[keyMap[attrName]] = getAttrValue(n, attrName) || '';
+                });
+                fileMap[name] = fileObj;
+            }
+            return fileMap;
+        }
+        /*********************************--utils
+        * isNode
+        * getTags
+        * getValue
+        * getTagValue
+        * getAttrValue
+        ***************************************/
+        function isNode (node) {
+            let type = Object.prototype.toString.apply(node);
+            if(type.indexOf('XMLDocument') > -1 || type.indexOf('Element') > -1) {
+                return true;
+            }
+            return false;
+        }
+        function getTags (node, tagname) {
+            let tags = null;
+            if(isNode(node)) {
+                tags = node.getElementsByTagName(tagname);
+            }
+            return tags;
+        }
+        function getValue (node) {
+            let value = null;
+            if(isNode(node)){
+                value = node.innerHTML;
+            }
+            return value;
+        }
+        function getTagValue (node, tagname, isMultiple) {
+            let targetTags = getTags(node, tagname);
+            if(!isMultiple){
+                if(targetTags){
+                    let verytag = null;
+                    let value = null;
+                    let len = targetTags.length;
+                    if(len > 0){
+                        verytag = targetTags[0];
+                        value = verytag.innerHTML
+                    }
+                    return value;
+                }
+            } else {
+                if(targetTags){
+                    let valueList = [];
+                    let len = targetTags.length;
+                    for(let i = 0; i < len; i++) {
+                        valueList.push(targetTags[i].innerHTML);
+                    }
+                    return valueList;
+                }
+            }
+            return null;
+        }
+        function getAttrValue (node, attrName) {
+            let value = null;
+            if(isNode(node) && attrName && attrName.length > 0) {
+                value = node.getAttribute(attrName);
+            }
+            return value;
+        }
+    </script>
+</body>
+</html>
